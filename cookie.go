@@ -11,15 +11,13 @@ import (
 
 //Options ...
 type Options struct {
-	MaxAge    int
-	Path      string
-	Domain    string
-	Expires   time.Time
-	Secure    bool
-	HTTPOnly  bool
-	Signed    bool
-	OverWrite bool
-	Key       string
+	MaxAge   int
+	Path     string
+	Domain   string
+	Secure   bool
+	HTTPOnly bool
+	Signed   bool
+	Key      string
 }
 
 //New ...
@@ -35,7 +33,7 @@ func New(res http.ResponseWriter, req *http.Request, options *Options) (cookie *
 		cookie.opts = options
 	} else {
 		cookie.opts = &Options{
-			Expires:  time.Now().Add(24 * time.Hour),
+			MaxAge:   86400 * 7,
 			Secure:   true,
 			HTTPOnly: true,
 			Path:     "/",
@@ -83,7 +81,7 @@ func (c *Cookies) Get(name string, opts *Options) (value string, err error) {
 }
 
 //Set ...
-func (c *Cookies) Set(name string, val string, options *Options) {
+func (c *Cookies) Set(name string, val string, options *Options) *Cookies {
 	if options != nil {
 		if options.Signed && len(options.Key) == 0 {
 			panic("Required key for signed cookies")
@@ -91,13 +89,11 @@ func (c *Cookies) Set(name string, val string, options *Options) {
 	}
 	var secure, httponly, Signed = c.opts.Secure, c.opts.HTTPOnly, c.opts.Signed
 	var maxAge = c.opts.MaxAge
-	var expires = c.opts.Expires
 	var domain, path, key = c.opts.Domain, c.opts.Path, c.opts.Key
 
 	if options != nil {
 		secure, httponly, Signed = options.Secure, options.HTTPOnly, options.Signed
 		maxAge = options.MaxAge
-		expires = options.Expires
 		domain, path, key = options.Domain, options.Path, options.Key
 	}
 	cookie := &http.Cookie{
@@ -106,9 +102,14 @@ func (c *Cookies) Set(name string, val string, options *Options) {
 		HttpOnly: httponly,
 		Secure:   secure,
 		MaxAge:   maxAge,
-		Expires:  expires,
 		Domain:   domain,
 		Path:     path,
+	}
+	if maxAge > 0 {
+		d := time.Duration(maxAge) * time.Second
+		cookie.Expires = time.Now().Add(d)
+	} else if maxAge < 0 {
+		cookie.Expires = time.Unix(1, 0)
 	}
 	http.SetCookie(c.writer, cookie)
 	if Signed {
@@ -117,6 +118,7 @@ func (c *Cookies) Set(name string, val string, options *Options) {
 		signcookie.Name = signcookie.Name + ".sig"
 		http.SetCookie(c.writer, &signcookie)
 	}
+	return c
 }
 
 //Sign ...

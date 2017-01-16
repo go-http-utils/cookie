@@ -5,8 +5,6 @@ import (
 	"net/http/httptest"
 	"testing"
 
-	"time"
-
 	"github.com/go-http-utils/cookie"
 	"github.com/stretchr/testify/assert"
 )
@@ -26,7 +24,7 @@ func TestCookie(t *testing.T) {
 		recorder := httptest.NewRecorder()
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			cookie := cookie.New(w, r, nil)
-			cookie.Set(cookiekey, cookievalue, nil)
+			cookie.Set(cookiekey, cookievalue, nil).Set(cookiekey, cookievalue, nil)
 		})
 		handler.ServeHTTP(recorder, req)
 		request := &http.Request{Header: http.Header{"Cookie": recorder.HeaderMap["Set-Cookie"]}}
@@ -49,7 +47,6 @@ func TestCookie(t *testing.T) {
 		keys := "zxcvbnm"
 		cookiekey := "test"
 		cookievalue := "xxxxx"
-		expires := time.Now().Add(time.Hour)
 		recorder := httptest.NewRecorder()
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			cookie := cookie.New(w, r, &cookie.Options{
@@ -60,7 +57,6 @@ func TestCookie(t *testing.T) {
 				Domain:   "teambition.com",
 				MaxAge:   3600,
 				Path:     "/",
-				Expires:  expires,
 			})
 			cookie.Set(cookiekey, cookievalue, nil)
 		})
@@ -75,7 +71,6 @@ func TestCookie(t *testing.T) {
 		assert.Equal(cookies.Domain, "teambition.com")
 		assert.Equal(cookies.MaxAge, 3600)
 		assert.Equal(cookies.Path, "/")
-		assert.Equal(expires.UTC().Sub(expires), time.Duration(0))
 
 		cookies, err = getCookie(cookiekey+".sig", recorder)
 
@@ -120,7 +115,7 @@ func TestCookie(t *testing.T) {
 	t.Run("Cookie with get  that should be", func(t *testing.T) {
 		assert := assert.New(t)
 		req, err := http.NewRequest("GET", "/health-check", nil)
-        if err != nil {
+		if err != nil {
 			t.Fatal(err)
 		}
 		signkey := "zxcvbnm"
@@ -132,6 +127,7 @@ func TestCookie(t *testing.T) {
 			opts := &cookie.Options{
 				Key:    signkey,
 				Signed: true,
+				MaxAge: -1,
 			}
 			cookies.Set(cookiekey, cookievalue, opts)
 		})
