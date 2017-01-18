@@ -9,7 +9,17 @@ import (
 	"time"
 )
 
-//Options ...
+//GlobalOptions Global Options that used for to create new cookie instance.
+type GlobalOptions struct {
+	MaxAge   int
+	Path     string
+	Domain   string
+	Secure   bool
+	HTTPOnly bool
+	Keys     []string
+}
+
+//Options  Options
 type Options struct {
 	MaxAge   int
 	Path     string
@@ -17,22 +27,22 @@ type Options struct {
 	Secure   bool
 	HTTPOnly bool
 	Signed   bool
-	Key      string
 }
 
-//New ...
-func New(res http.ResponseWriter, req *http.Request, options *Options) (cookie *Cookies) {
+//New The function create&&return an operational cookie instance by cookie.GlobalOptions.
+func New(res http.ResponseWriter, req *http.Request, options ...*GlobalOptions) (cookie *Cookies) {
 	cookie = &Cookies{
 		request: req,
 		writer:  res,
 	}
-	if options != nil {
-		if options.Signed && len(options.Key) == 0 {
-			panic("Required key for signed cookies")
-		}
-		cookie.opts = options
+	var opts *GlobalOptions
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	if opts != nil {
+		cookie.opts = opts
 	} else {
-		cookie.opts = &Options{
+		cookie.opts = &GlobalOptions{
 			MaxAge:   86400 * 7,
 			Secure:   true,
 			HTTPOnly: true,
@@ -42,17 +52,20 @@ func New(res http.ResponseWriter, req *http.Request, options *Options) (cookie *
 	return
 }
 
-//Cookies ...
+//Cookies Secure Cookie
 type Cookies struct {
 	request *http.Request
 	writer  http.ResponseWriter
-	opts    *Options
+	opts    *GlobalOptions
 }
 
-//Get ...
-func (c *Cookies) Get(name string, opts *Options) (value string, err error) {
-	if opts != nil {
-		if opts.Signed && len(opts.Key) == 0 {
+//Get This extracts the cookie with the given name from the Cookie header in the request. If such a cookie exists, its value is returned. Otherwise, nothing is returned. { signed: true } can optionally be passed as the second parameter options. In this case, a signature cookie (a cookie of same name ending with the .sig suffix appended) is fetched. If the signature cookie does exist, cookie will check the hash of cookie-value whether matches registered key:
+func (c *Cookies) Get(name string, options ...*Options) (value string, err error) {
+	var signed bool
+	if len(options) > 0 {
+		opts := options[0]
+		signed = opts.Signed
+		if signed && len(c.opts.Keys) == 0 {
 			panic("Required key for signed cookies")
 		}
 	}
@@ -61,40 +74,45 @@ func (c *Cookies) Get(name string, opts *Options) (value string, err error) {
 		return
 	}
 	value = val.Value
-	signed := c.opts.Signed
-	signkey := c.opts.Key
-	if opts != nil {
-		signed = opts.Signed
-		signkey = opts.Key
-	}
 	if signed {
 		var sigName = name + ".sig"
-		newsignval := Sign(signkey, val.Value)
 		oldsignval, _ := c.request.Cookie(sigName)
-		if oldsignval == nil || newsignval != oldsignval.Value {
-			value = ""
-			err = errors.New("The cookie's value have different sign")
-			c.Set(sigName, "", &Options{})
+		for _, key := range c.opts.Keys {
+			newsignval := Sign(key, val.Value)
+			if oldsignval != nil && newsignval == oldsignval.Value {
+				value = val.Value
+				err = nil
+				break
+			} else {
+				value = ""
+				err = errors.New("The cookie's value have different sign")
+			}
 		}
 	}
 	return
 }
 
-//Set ...
-func (c *Cookies) Set(name string, val string, options *Options) *Cookies {
-	if options != nil {
-		if options.Signed && len(options.Key) == 0 {
+//Set This sets the given cookie to the response and returns the current context to allow chaining.
+//If the options object is nil, it will use global options or default options.
+func (c *Cookies) Set(name string, val string, options ...*Options) *Cookies {
+	var secure, httponly = c.opts.Secure, c.opts.HTTPOnly
+	var Signed bool
+	var maxAge = c.opts.MaxAge
+	var domain, path, key = c.opts.Domain, c.opts.Path, ""
+
+	if len(c.opts.Keys) > 0 {
+		key = c.opts.Keys[0]
+	}
+
+	if len(options) > 0 {
+		opts := options[0]
+		Signed = opts.Signed
+		if Signed && key == "" {
 			panic("Required key for signed cookies")
 		}
-	}
-	var secure, httponly, Signed = c.opts.Secure, c.opts.HTTPOnly, c.opts.Signed
-	var maxAge = c.opts.MaxAge
-	var domain, path, key = c.opts.Domain, c.opts.Path, c.opts.Key
-
-	if options != nil {
-		secure, httponly, Signed = options.Secure, options.HTTPOnly, options.Signed
-		maxAge = options.MaxAge
-		domain, path, key = options.Domain, options.Path, options.Key
+		secure, httponly = opts.Secure, opts.HTTPOnly
+		maxAge = opts.MaxAge
+		domain, path = opts.Domain, opts.Path
 	}
 	cookie := &http.Cookie{
 		Name:     name,
@@ -121,7 +139,7 @@ func (c *Cookies) Set(name string, val string, options *Options) *Cookies {
 	return c
 }
 
-//Sign ...
+//Sign Use sha256 to sign data by the key parameter
 func Sign(key string, data string) (sign string) {
 	mac := hmac.New(sha256.New, []byte(key))
 	mac.Write([]byte(data))

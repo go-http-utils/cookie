@@ -10,17 +10,18 @@ import (
 func main() {
 	req, _ := http.NewRequest("GET", "/health-check", nil)
 
-	keys := "zxcvbnm"
+	keys := []string{"zxcvbnm"}
 	cookiekey := "test"
 	cookievalue := "xxxxx"
 	recorder := httptest.NewRecorder()
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookie := cookie.New(w, r, &cookie.Options{
-			Key:      keys,
+		cookies := cookie.New(w, r, &cookie.GlobalOptions{
+			Keys: keys,
+		})
+		cookies.Set(cookiekey, cookievalue, &cookie.Options{
 			Signed:   true,
 			HTTPOnly: true,
 		})
-		cookie.Set(cookiekey, cookievalue, nil)
 	})
 
 	handler.ServeHTTP(recorder, req)

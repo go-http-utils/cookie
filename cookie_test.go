@@ -12,7 +12,7 @@ import (
 var DefaultClient = &http.Client{}
 
 func TestCookie(t *testing.T) {
-
+	keys := []string{"zxcvbnm"}
 	t.Run("Cookie use default options that should be", func(t *testing.T) {
 		assert := assert.New(t)
 		req, err := http.NewRequest("GET", "/health-check", nil)
@@ -23,8 +23,8 @@ func TestCookie(t *testing.T) {
 		cookievalue := "xxxxx"
 		recorder := httptest.NewRecorder()
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cookie := cookie.New(w, r, nil)
-			cookie.Set(cookiekey, cookievalue, nil).Set(cookiekey, cookievalue, nil)
+			cookie := cookie.New(w, r)
+			cookie.Set(cookiekey, cookievalue).Set(cookiekey, cookievalue)
 		})
 		handler.ServeHTTP(recorder, req)
 		request := &http.Request{Header: http.Header{"Cookie": recorder.HeaderMap["Set-Cookie"]}}
@@ -44,21 +44,19 @@ func TestCookie(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		keys := "zxcvbnm"
 		cookiekey := "test"
 		cookievalue := "xxxxx"
 		recorder := httptest.NewRecorder()
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cookie := cookie.New(w, r, &cookie.Options{
-				Key:      keys,
-				Signed:   true,
+			cookies := cookie.New(w, r, &cookie.GlobalOptions{
+				Keys: keys,
+			})
+			cookies.Set(cookiekey, cookievalue, &cookie.Options{Signed: true,
 				HTTPOnly: true,
 				Secure:   true,
 				Domain:   "teambition.com",
 				MaxAge:   3600,
-				Path:     "/",
-			})
-			cookie.Set(cookiekey, cookievalue, nil)
+				Path:     "/"})
 		})
 
 		handler.ServeHTTP(recorder, req)
@@ -76,7 +74,7 @@ func TestCookie(t *testing.T) {
 
 		assert.Nil(err)
 		assert.NotNil(cookies)
-		assert.Equal(cookies.Value, cookie.Sign(keys, cookievalue))
+		assert.Equal(cookies.Value, cookie.Sign(keys[0], cookievalue))
 	})
 	t.Run("Cookie with custom Options that should be", func(t *testing.T) {
 		assert := assert.New(t)
@@ -84,17 +82,15 @@ func TestCookie(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		keys := "zxcvbnm"
+		keys := []string{"zxcvbnm"}
 		cookiekey := "test"
 		cookievalue := "xxxxx"
 		recorder := httptest.NewRecorder()
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cookies := cookie.New(w, r, &cookie.Options{
-				Key:    keys,
-				Signed: true,
+			cookies := cookie.New(w, r, &cookie.GlobalOptions{
+				Keys: keys,
 			})
 			cookies.Set(cookiekey, cookievalue, &cookie.Options{
-				Key:    keys,
 				Signed: false,
 			})
 		})
@@ -118,14 +114,12 @@ func TestCookie(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		signkey := "zxcvbnm"
 		cookiekey := "test"
 		cookievalue := "xxxxx"
 		recorder := httptest.NewRecorder()
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cookies := cookie.New(w, r, nil)
+			cookies := cookie.New(w, r, &cookie.GlobalOptions{Keys: keys})
 			opts := &cookie.Options{
-				Key:    signkey,
 				Signed: true,
 				MaxAge: -1,
 			}
@@ -148,16 +142,15 @@ func TestCookie(t *testing.T) {
 
 		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			t.Log(r.Cookies())
-			cookies := cookie.New(w, r, nil)
+			cookies := cookie.New(w, r, &cookie.GlobalOptions{Keys: keys})
 			opts := &cookie.Options{
-				Key:    signkey,
 				Signed: true,
 			}
 			val, err := cookies.Get(cookiekey, opts)
 			assert.Nil(err)
 			assert.Equal(val, cookievalue)
 
-			val, err = cookies.Get(cookiekey+".sig", nil)
+			val, err = cookies.Get(cookiekey + ".sig")
 			assert.Nil(err)
 			assert.NotEmpty(val)
 
@@ -178,9 +171,8 @@ func TestCookie(t *testing.T) {
 
 		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			t.Log(r.Cookies())
-			cookies := cookie.New(w, r, nil)
+			cookies := cookie.New(w, r, &cookie.GlobalOptions{Keys: keys})
 			opts := &cookie.Options{
-				Key:    signkey,
 				Signed: true,
 			}
 			val, err := cookies.Get(cookiekey, opts)
@@ -198,28 +190,16 @@ func TestCookie(t *testing.T) {
 		}
 
 		recorder := httptest.NewRecorder()
+
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			defer func() {
 				rec := recover()
 				assert.NotNil(rec)
 			}()
 			opts := &cookie.Options{
-				Key:    "",
 				Signed: true,
 			}
-			cookie.New(w, r, opts)
-		})
-		handler.ServeHTTP(recorder, req)
-		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			defer func() {
-				rec := recover()
-				assert.NotNil(rec)
-			}()
-			opts := &cookie.Options{
-				Key:    "",
-				Signed: true,
-			}
-			cookies := cookie.New(w, r, nil)
+			cookies := cookie.New(w, r)
 			cookiekey := "test"
 			cookievalue := "xxxxx"
 			cookies.Set(cookiekey, cookievalue, opts)
@@ -232,13 +212,90 @@ func TestCookie(t *testing.T) {
 				assert.NotNil(rec)
 			}()
 			opts := &cookie.Options{
-				Key:    "",
 				Signed: true,
 			}
-			cookies := cookie.New(w, r, nil)
+			cookies := cookie.New(w, r)
 			cookiekey := "test"
-			cookies.Get(cookiekey+"ccc", nil)
+			cookies.Get(cookiekey + "ccc")
 			cookies.Get(cookiekey, opts)
+		})
+		handler.ServeHTTP(recorder, req)
+	})
+	t.Run("Cookie with multit keys that should be", func(t *testing.T) {
+		keys := []string{"zxcvbnm"}
+
+		assert := assert.New(t)
+		req, err := http.NewRequest("GET", "/health-check", nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+		cookiekey := "test"
+		cookievalue := "xxxxx"
+		recorder := httptest.NewRecorder()
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			cookies := cookie.New(w, r, &cookie.GlobalOptions{Keys: keys})
+			opts := &cookie.Options{
+				Signed: true,
+				MaxAge: -1,
+			}
+			cookies.Set(cookiekey, cookievalue, opts)
+		})
+
+		handler.ServeHTTP(recorder, req)
+		//====second========
+		keys = []string{"newkey", "zxcvbnm"}
+		req, err = http.NewRequest("GET", "/health-check", nil)
+
+		cookies, err := getCookie(cookiekey, recorder)
+		req.AddCookie(cookies)
+		assert.Nil(err)
+		assert.Equal(cookies.Value, cookievalue)
+
+		cookies, err = getCookie(cookiekey+".sig", recorder)
+		req.AddCookie(cookies)
+		assert.NotNil(cookies)
+		assert.Nil(err)
+
+		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Log(r.Cookies())
+			cookies := cookie.New(w, r, &cookie.GlobalOptions{Keys: keys})
+			opts := &cookie.Options{
+				Signed: true,
+			}
+			val, err := cookies.Get(cookiekey, opts)
+			assert.Nil(err)
+			assert.Equal(val, cookievalue)
+
+			val, err = cookies.Get(cookiekey + ".sig")
+			assert.Nil(err)
+			assert.NotEmpty(val)
+
+		})
+		handler.ServeHTTP(recorder, req)
+		//====third trying to modify cookie with mock value========
+		keys = []string{"newnewkey", "newkey", "zxcvbnm"}
+		req, err = http.NewRequest("GET", "/health-check", nil)
+		cookies, err = getCookie(cookiekey, recorder)
+		cookies.Value = "modify"
+		req.AddCookie(cookies)
+		assert.Nil(err)
+		assert.Equal(cookies.Value, "modify")
+
+		cookies, err = getCookie(cookiekey+".sig", recorder)
+		req.AddCookie(cookies)
+		assert.NotNil(cookies)
+		assert.Nil(err)
+
+		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			t.Log(r.Cookies())
+			cookies := cookie.New(w, r, &cookie.GlobalOptions{Keys: keys})
+			opts := &cookie.Options{
+				Signed: true,
+			}
+			val, err := cookies.Get(cookiekey, opts)
+			assert.Equal(err.Error(), "The cookie's value have different sign")
+			assert.NotEqual(val, cookievalue)
+			assert.Equal(val, "")
 		})
 		handler.ServeHTTP(recorder, req)
 	})
