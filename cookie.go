@@ -2,14 +2,15 @@ package cookie
 
 import (
 	"crypto/hmac"
+	"crypto/sha1"
 	"crypto/sha256"
-	"encoding/hex"
+	"encoding/base64"
 	"errors"
 	"net/http"
 	"time"
 )
 
-//GlobalOptions Global Options that used for to create new cookie instance.
+// GlobalOptions used for to create new cookie instance.
 type GlobalOptions struct {
 	MaxAge   int
 	Path     string
@@ -19,7 +20,7 @@ type GlobalOptions struct {
 	Keys     []string
 }
 
-//Options  Options
+// Options used for Set or Set [Options].
 type Options struct {
 	MaxAge   int
 	Path     string
@@ -29,7 +30,7 @@ type Options struct {
 	Signed   bool
 }
 
-//New The function create&&return an operational cookie instance by cookie.GlobalOptions.
+// New an operational cookie instance by cookie.GlobalOptions.
 func New(res http.ResponseWriter, req *http.Request, options ...*GlobalOptions) (cookie *Cookies) {
 	cookie = &Cookies{
 		request: req,
@@ -52,14 +53,14 @@ func New(res http.ResponseWriter, req *http.Request, options ...*GlobalOptions) 
 	return
 }
 
-//Cookies Secure Cookie
+// Cookies is secure cookie base on native cookie
 type Cookies struct {
 	request *http.Request
 	writer  http.ResponseWriter
 	opts    *GlobalOptions
 }
 
-//Get This extracts the cookie with the given name from the Cookie header in the request. If such a cookie exists, its value is returned. Otherwise, nothing is returned. { signed: true } can optionally be passed as the second parameter options. In this case, a signature cookie (a cookie of same name ending with the .sig suffix appended) is fetched. If the signature cookie does exist, cookie will check the hash of cookie-value whether matches registered key:
+// Get the cookie with the given name from the Cookie header in the request. If such a cookie exists, its value is returned. Otherwise, nothing is returned. { signed: true } can optionally be passed as the second parameter options. In this case, a signature cookie (a cookie of same name ending with the .sig suffix appended) is fetched. If the signature cookie does exist, cookie will check the hash of cookie-value whether matches registered keys.
 func (c *Cookies) Get(name string, options ...*Options) (value string, err error) {
 	var signed bool
 	if len(options) > 0 {
@@ -73,13 +74,15 @@ func (c *Cookies) Get(name string, options ...*Options) (value string, err error
 	if val == nil {
 		return
 	}
+	// str, _ := base64.StdEncoding.DecodeString(val.Value)
+	// val.Value = string(str)
 	value = val.Value
 	if signed {
 		var sigName = name + ".sig"
 		oldsignval, _ := c.request.Cookie(sigName)
 		for _, key := range c.opts.Keys {
 			newsignval := Sign(key, val.Value)
-			if oldsignval != nil && newsignval == oldsignval.Value {
+			if oldsignval != nil && (newsignval == oldsignval.Value || signSha1(key, val.Value) == oldsignval.Value) {
 				value = val.Value
 				err = nil
 				break
@@ -92,7 +95,7 @@ func (c *Cookies) Get(name string, options ...*Options) (value string, err error
 	return
 }
 
-//Set This sets the given cookie to the response and returns the current context to allow chaining.
+// Set the given cookie to the response and returns the current context to allow chaining.
 //If the options object is nil, it will use global options or default options.
 func (c *Cookies) Set(name string, val string, options ...*Options) *Cookies {
 	var secure, httponly = c.opts.Secure, c.opts.HTTPOnly
@@ -139,10 +142,16 @@ func (c *Cookies) Set(name string, val string, options ...*Options) *Cookies {
 	return c
 }
 
-//Sign Use sha256 to sign data by the key parameter
+// Sign data by the key parameter that use sha256 algorithm
 func Sign(key string, data string) (sign string) {
 	mac := hmac.New(sha256.New, []byte(key))
 	mac.Write([]byte(data))
-	sign = hex.EncodeToString(mac.Sum(nil))
+	sign = base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+	return
+}
+func signSha1(key string, data string) (sign string) {
+	mac := hmac.New(sha1.New, []byte(key))
+	mac.Write([]byte(data))
+	sign = base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	return
 }
