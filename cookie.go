@@ -31,10 +31,10 @@ type Options struct {
 }
 
 // New an operational cookie instance by cookie.GlobalOptions.
-func New(res http.ResponseWriter, req *http.Request, options ...*GlobalOptions) (cookie *Cookies) {
+func New(w http.ResponseWriter, r *http.Request, options ...*GlobalOptions) (cookie *Cookies) {
 	cookie = &Cookies{
-		request: req,
-		writer:  res,
+		req: r,
+		w:   w,
 	}
 	var opts *GlobalOptions
 	if len(options) > 0 {
@@ -55,9 +55,9 @@ func New(res http.ResponseWriter, req *http.Request, options ...*GlobalOptions) 
 
 // Cookies is secure cookie base on native cookie
 type Cookies struct {
-	request *http.Request
-	writer  http.ResponseWriter
-	opts    *GlobalOptions
+	req  *http.Request
+	w    http.ResponseWriter
+	opts *GlobalOptions
 }
 
 // Get the cookie with the given name from the Cookie header in the request. If such a cookie exists, its value is returned. Otherwise, nothing is returned. { signed: true } can optionally be passed as the second parameter options. In this case, a signature cookie (a cookie of same name ending with the .sig suffix appended) is fetched. If the signature cookie does exist, cookie will check the hash of cookie-value whether matches registered keys.
@@ -67,10 +67,10 @@ func (c *Cookies) Get(name string, options ...*Options) (value string, err error
 		opts := options[0]
 		signed = opts.Signed
 		if signed && len(c.opts.Keys) == 0 {
-			panic("Required key for signed cookies")
+			panic("key required for signed cookies")
 		}
 	}
-	val, err := c.request.Cookie(name)
+	val, err := c.req.Cookie(name)
 	if val == nil {
 		return
 	}
@@ -79,7 +79,7 @@ func (c *Cookies) Get(name string, options ...*Options) (value string, err error
 	value = val.Value
 	if signed {
 		var sigName = name + ".sig"
-		oldsignval, _ := c.request.Cookie(sigName)
+		oldsignval, _ := c.req.Cookie(sigName)
 		for _, key := range c.opts.Keys {
 			newsignval := Sign(key, val.Value)
 			if oldsignval != nil && (newsignval == oldsignval.Value || signSha1(key, val.Value) == oldsignval.Value) {
@@ -88,7 +88,7 @@ func (c *Cookies) Get(name string, options ...*Options) (value string, err error
 				break
 			} else {
 				value = ""
-				err = errors.New("The cookie's value have different sign")
+				err = errors.New("invalid signed cookie")
 			}
 		}
 	}
@@ -132,12 +132,12 @@ func (c *Cookies) Set(name string, val string, options ...*Options) *Cookies {
 	} else if maxAge < 0 {
 		cookie.Expires = time.Unix(1, 0)
 	}
-	http.SetCookie(c.writer, cookie)
+	http.SetCookie(c.w, cookie)
 	if Signed {
 		signcookie := *cookie
 		signcookie.Value = Sign(key, val)
 		signcookie.Name = signcookie.Name + ".sig"
-		http.SetCookie(c.writer, &signcookie)
+		http.SetCookie(c.w, &signcookie)
 	}
 	return c
 }
@@ -149,6 +149,8 @@ func Sign(key string, data string) (sign string) {
 	sign = base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	return
 }
+
+// compatibility for https://github.com/pillarjs/cookies v1.0.x
 func signSha1(key string, data string) (sign string) {
 	mac := hmac.New(sha1.New, []byte(key))
 	mac.Write([]byte(data))
