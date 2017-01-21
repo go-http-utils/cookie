@@ -176,7 +176,7 @@ func TestCookie(t *testing.T) {
 				Signed: true,
 			}
 			val, err := cookies.Get(cookiekey, opts)
-			assert.Equal(err.Error(), "The cookie's value have different sign")
+			assert.Equal(err.Error(), "invalid signed cookie")
 			assert.NotEqual(val, cookievalue)
 			assert.Equal(val, "")
 		})
@@ -293,7 +293,7 @@ func TestCookie(t *testing.T) {
 				Signed: true,
 			}
 			val, err := cookies.Get(cookiekey, opts)
-			assert.Equal(err.Error(), "The cookie's value have different sign")
+			assert.Equal(err.Error(), "invalid signed cookie")
 			assert.NotEqual(val, cookievalue)
 			assert.Equal(val, "")
 		})
