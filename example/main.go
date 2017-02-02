@@ -2,27 +2,27 @@ package main
 
 import (
 	"net/http"
-	"net/http/httptest"
 
 	"github.com/go-http-utils/cookie"
 )
 
 func main() {
-	req, _ := http.NewRequest("GET", "/health-check", nil)
+	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
+		cookies := cookie.New(w, r, cookie.NewKeygrip([]string{"some key"}))
 
-	keys := []string{"zxcvbnm"}
-	cookiekey := "test"
-	cookievalue := "xxxxx"
-	recorder := httptest.NewRecorder()
-	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		cookies := cookie.New(w, r, &cookie.GlobalOptions{
-			Keys: keys,
-		})
-		cookies.Set(cookiekey, cookievalue, &cookie.Options{
+		cookies.Set("test", "some cookie", &cookie.Options{
 			Signed:   true,
 			HTTPOnly: true,
 		})
+
+		value, err := cookies.Get("test", true)
+		if err != nil {
+			w.WriteHeader(500)
+			w.Write([]byte(err.Error()))
+		} else {
+			w.Write([]byte(value))
+		}
 	})
 
-	handler.ServeHTTP(recorder, req)
+	http.ListenAndServe(":8080", nil)
 }

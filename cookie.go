@@ -3,157 +3,152 @@ package cookie
 import (
 	"crypto/hmac"
 	"crypto/sha1"
-	"crypto/sha256"
+	"crypto/subtle"
 	"encoding/base64"
 	"errors"
+	"hash"
 	"net/http"
 	"time"
 )
 
-// GlobalOptions used for to create new cookie instance.
-type GlobalOptions struct {
-	MaxAge   int
-	Path     string
-	Domain   string
-	Secure   bool
-	HTTPOnly bool
-	Keys     []string
-}
-
-// Options used for Set or Set [Options].
+// Options is used to setting cookie.
 type Options struct {
-	MaxAge   int
-	Path     string
-	Domain   string
-	Secure   bool
-	HTTPOnly bool
-	Signed   bool
+	MaxAge   int    // optional, default to "/"
+	Path     string // optional
+	Domain   string // optional
+	Secure   bool   // optional
+	HTTPOnly bool   // optional, default to `true``
+	Signed   bool   // optional
 }
 
-// New an operational cookie instance by cookie.GlobalOptions.
-func New(w http.ResponseWriter, r *http.Request, options ...*GlobalOptions) (cookie *Cookies) {
-	cookie = &Cookies{
+var defaultOptions = &Options{
+	Path:     "/",
+	HTTPOnly: true,
+}
+
+// New returns a Cookies instance with optional keygrip for signed cookies.
+func New(w http.ResponseWriter, r *http.Request, keygrip ...*Keygrip) (cookie *Cookies) {
+	c := &Cookies{
 		req: r,
 		w:   w,
 	}
-	var opts *GlobalOptions
-	if len(options) > 0 {
-		opts = options[0]
-	}
-	if opts != nil {
-		cookie.opts = opts
-	} else {
-		cookie.opts = &GlobalOptions{
-			MaxAge:   86400 * 7,
-			Secure:   true,
-			HTTPOnly: true,
-			Path:     "/",
-		}
-	}
-	return
-}
-
-// Cookies is secure cookie base on native cookie
-type Cookies struct {
-	req  *http.Request
-	w    http.ResponseWriter
-	opts *GlobalOptions
-}
-
-// Get the cookie with the given name from the Cookie header in the request. If such a cookie exists, its value is returned. Otherwise, nothing is returned. { signed: true } can optionally be passed as the second parameter options. In this case, a signature cookie (a cookie of same name ending with the .sig suffix appended) is fetched. If the signature cookie does exist, cookie will check the hash of cookie-value whether matches registered keys.
-func (c *Cookies) Get(name string, options ...*Options) (value string, err error) {
-	var signed bool
-	if len(options) > 0 {
-		opts := options[0]
-		signed = opts.Signed
-		if signed && len(c.opts.Keys) == 0 {
-			panic("key required for signed cookies")
-		}
-	}
-	val, err := c.req.Cookie(name)
-	if val == nil {
-		return
-	}
-	// str, _ := base64.StdEncoding.DecodeString(val.Value)
-	// val.Value = string(str)
-	value = val.Value
-	if signed {
-		var sigName = name + ".sig"
-		oldsignval, _ := c.req.Cookie(sigName)
-		for _, key := range c.opts.Keys {
-			newsignval := Sign(key, val.Value)
-			if oldsignval != nil && (newsignval == oldsignval.Value || signSha1(key, val.Value) == oldsignval.Value) {
-				value = val.Value
-				err = nil
-				break
-			} else {
-				value = ""
-				err = errors.New("invalid signed cookie")
-			}
-		}
-	}
-	return
-}
-
-// Set the given cookie to the response and returns the current context to allow chaining.
-//If the options object is nil, it will use global options or default options.
-func (c *Cookies) Set(name string, val string, options ...*Options) *Cookies {
-	var secure, httponly = c.opts.Secure, c.opts.HTTPOnly
-	var Signed bool
-	var maxAge = c.opts.MaxAge
-	var domain, path, key = c.opts.Domain, c.opts.Path, ""
-
-	if len(c.opts.Keys) > 0 {
-		key = c.opts.Keys[0]
-	}
-
-	if len(options) > 0 {
-		opts := options[0]
-		Signed = opts.Signed
-		if Signed && key == "" {
-			panic("Required key for signed cookies")
-		}
-		secure, httponly = opts.Secure, opts.HTTPOnly
-		maxAge = opts.MaxAge
-		domain, path = opts.Domain, opts.Path
-	}
-	cookie := &http.Cookie{
-		Name:     name,
-		Value:    val,
-		HttpOnly: httponly,
-		Secure:   secure,
-		MaxAge:   maxAge,
-		Domain:   domain,
-		Path:     path,
-	}
-	if maxAge > 0 {
-		d := time.Duration(maxAge) * time.Second
-		cookie.Expires = time.Now().Add(d)
-	} else if maxAge < 0 {
-		cookie.Expires = time.Unix(1, 0)
-	}
-	http.SetCookie(c.w, cookie)
-	if Signed {
-		signcookie := *cookie
-		signcookie.Value = Sign(key, val)
-		signcookie.Name = signcookie.Name + ".sig"
-		http.SetCookie(c.w, &signcookie)
+	if len(keygrip) > 0 {
+		c.keygrip = keygrip[0]
 	}
 	return c
 }
 
-// Sign data by the key parameter that use sha256 algorithm
-func Sign(key string, data string) (sign string) {
-	mac := hmac.New(sha256.New, []byte(key))
-	mac.Write([]byte(data))
-	sign = base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+// Cookies manipulates http.Cookie easy, supports signed cookies.
+type Cookies struct {
+	req     *http.Request
+	w       http.ResponseWriter
+	keygrip *Keygrip
+}
+
+// Get returns the cookie with the given name from the Cookie header in the request.
+// If such a cookie exists, its value is returned. Otherwise, nothing is returned.
+// signed = true can optionally be passed as the second parameter.
+// In this case, a signature cookie (a cookie of same name ending with the .sig suffix appended)
+// is fetched. If the signature cookie does exist, cookie will check the hash of cookie-value
+// whether matches registered keys.
+func (c *Cookies) Get(name string, signed ...bool) (value string, err error) {
+	cookie, err := c.req.Cookie(name)
+	if cookie == nil {
+		return
+	}
+	value = cookie.Value
+	if len(signed) > 0 && signed[0] {
+		if c.keygrip == nil {
+			panic("required keygrip for signed cookies")
+		}
+		if sig, _ := c.req.Cookie(name + ".sig"); sig != nil && len(value) > 0 {
+			if c.keygrip.Verify(name+"="+value, sig.Value) {
+				return
+			}
+		}
+		value = ""
+		err = errors.New("invalid signed cookie")
+	}
 	return
 }
 
-// compatibility for https://github.com/pillarjs/cookies v1.0.x
-func signSha1(key string, data string) (sign string) {
-	mac := hmac.New(sha1.New, []byte(key))
-	mac.Write([]byte(data))
-	sign = base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
+// Set set the given cookie to the response and returns the current context to allow chaining.
+// If options omit, it will use default options.
+func (c *Cookies) Set(name, val string, options ...*Options) *Cookies {
+	opts := defaultOptions
+	if len(options) > 0 {
+		opts = options[0]
+	}
+
+	cookie := &http.Cookie{
+		Name:     name,
+		Value:    val,
+		HttpOnly: opts.HTTPOnly,
+		Secure:   opts.Secure,
+		MaxAge:   opts.MaxAge,
+		Domain:   opts.Domain,
+		Path:     opts.Path,
+	}
+	if opts.MaxAge > 0 {
+		d := time.Duration(opts.MaxAge) * time.Second
+		cookie.Expires = time.Now().Add(d)
+	} else if opts.MaxAge < 0 {
+		cookie.Expires = time.Unix(1, 0)
+	}
+	http.SetCookie(c.w, cookie)
+	if opts.Signed {
+		if c.keygrip == nil {
+			panic("required keygrip for signed cookie")
+		}
+		sig := *cookie
+		sig.Value = c.keygrip.Sign(sig.Name + "=" + sig.Value)
+		sig.Name = sig.Name + ".sig"
+		http.SetCookie(c.w, &sig)
+	}
+	return c
+}
+
+// Keygrip uses for signing and verifying data through a rotating credential system.
+type Keygrip struct {
+	hash []hash.Hash
+}
+
+// NewKeygrip returns a Keygrip instance with optional keys.
+func NewKeygrip(keys []string) *Keygrip {
+	if len(keys) == 0 {
+		panic("required keys for Keygrip")
+	}
+
+	k := &Keygrip{
+		hash: make([]hash.Hash, 0, len(keys)),
+	}
+	for _, key := range keys {
+		k.hash = append(k.hash, hmac.New(sha1.New, []byte(key)))
+	}
+	return k
+}
+
+// Sign creates a summary with data and sha1 algorithm
+// compatibility for https://github.com/pillarjs/cookies
+func (k *Keygrip) Sign(data string) (sum string) {
+	return base64.RawURLEncoding.EncodeToString(digest(k.hash[0], data))
+}
+
+// Verify verify the data with the given hash summary
+func (k *Keygrip) Verify(data, sum string) bool {
+	if current, err := base64.RawURLEncoding.DecodeString(sum); err == nil {
+		for _, h := range k.hash {
+			if subtle.ConstantTimeCompare(digest(h, data), current) == 1 {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func digest(h hash.Hash, data string) (buf []byte) {
+	h.Write([]byte(data))
+	buf = h.Sum(nil)
+	h.Reset()
 	return
 }
