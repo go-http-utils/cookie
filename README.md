@@ -15,7 +15,7 @@ Advanced cookie library for Go, support signed cookies.
 
 ## API
 
-### cookie.New(w, r[, keygrip *Keygrip])
+### cookie.New(w http.ResponseWriter, r *http.Request[, keygrip *Keygrip])
 It returns a Cookies instance with optional keygrip for signed cookies.
 
 ### cookies.Set(name, val string[, opts *Options])
