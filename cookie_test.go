@@ -4,6 +4,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -273,6 +274,34 @@ func TestCookie(t *testing.T) {
 		})
 		handler.ServeHTTP(recorder, req)
 	})
+}
+
+func TestCookieRace(t *testing.T) {
+	assert := assert.New(t)
+
+	keygrip := NewKeygrip([]string{"some key"})
+	group := &sync.WaitGroup{}
+	group.Add(3)
+
+	go func() {
+		defer group.Done()
+		sum := keygrip.Sign("123")
+		assert.True(keygrip.Verify("123", sum))
+	}()
+
+	go func() {
+		defer group.Done()
+		sum := keygrip.Sign("456")
+		assert.True(keygrip.Verify("456", sum))
+	}()
+
+	go func() {
+		defer group.Done()
+		sum := keygrip.Sign("789")
+		assert.True(keygrip.Verify("789", sum))
+	}()
+
+	group.Wait()
 }
 
 func TestPillarjsCookie(t *testing.T) {

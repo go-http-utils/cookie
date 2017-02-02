@@ -8,6 +8,7 @@ import (
 	"errors"
 	"hash"
 	"net/http"
+	"sync"
 	"time"
 )
 
@@ -110,6 +111,7 @@ func (c *Cookies) Set(name, val string, options ...*Options) *Cookies {
 
 // Keygrip uses for signing and verifying data through a rotating credential system.
 type Keygrip struct {
+	mu   sync.Mutex // guarantee hash digest
 	hash []hash.Hash
 }
 
@@ -131,11 +133,15 @@ func NewKeygrip(keys []string) *Keygrip {
 // Sign creates a summary with data and sha1 algorithm
 // compatibility for https://github.com/pillarjs/cookies
 func (k *Keygrip) Sign(data string) (sum string) {
+	k.mu.Lock()
+	defer k.mu.Unlock()
 	return base64.RawURLEncoding.EncodeToString(digest(k.hash[0], data))
 }
 
 // Verify verify the data with the given hash summary
 func (k *Keygrip) Verify(data, sum string) bool {
+	k.mu.Lock()
+	defer k.mu.Unlock()
 	if current, err := base64.RawURLEncoding.DecodeString(sum); err == nil {
 		for _, h := range k.hash {
 			if subtle.ConstantTimeCompare(digest(h, data), current) == 1 {
