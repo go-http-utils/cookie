@@ -6,16 +6,14 @@ import (
 	"crypto/subtle"
 	"encoding/base64"
 	"errors"
-	"hash"
 	"net/http"
-	"sync"
 	"time"
 )
 
 // Options is used to setting cookie.
 type Options struct {
-	MaxAge   int    // optional, default to "/"
-	Path     string // optional
+	MaxAge   int    // optional
+	Path     string // optional, default to "/"
 	Domain   string // optional
 	Secure   bool   // optional
 	HTTPOnly bool   // optional, default to `true``
@@ -27,23 +25,55 @@ var defaultOptions = &Options{
 	HTTPOnly: true,
 }
 
+// default hash function
+var hasher = func(key, data string) []byte {
+	h := hmac.New(sha1.New, []byte(key))
+	h.Write([]byte(data))
+	return h.Sum(nil)
+}
+
+// SetHash set a global hash function for signed cookies, default to:
+//
+//  func(key, data string) []byte {
+//  	h := hmac.New(sha1.New, []byte(key))
+//  	h.Write([]byte(data))
+//  	return h.Sum(nil)
+//  }
+//
+// The default hash is for compatibility with https://github.com/pillarjs/cookies
+// But it is easy to crack secret key. You should set a custom hash function, such as:
+//
+//  func(key, data string) []byte {
+//  	h := hmac.New(sha256.New, []byte(key))
+//  	h.Write([]byte(data))
+//  	h.Write(salt) // some salt bytes
+//  	return h.Sum(nil)
+//  }
+//
+func SetHash(fn func(key, data string) []byte) {
+	if fn == nil {
+		panic("invalid hash function")
+	}
+	hasher = fn
+}
+
 // New returns a Cookies instance with optional keygrip for signed cookies.
-func New(w http.ResponseWriter, r *http.Request, keygrip ...*Keygrip) (cookie *Cookies) {
+func New(w http.ResponseWriter, r *http.Request, keys ...[]string) (cookie *Cookies) {
 	c := &Cookies{
 		req: r,
 		w:   w,
 	}
-	if len(keygrip) > 0 {
-		c.keygrip = keygrip[0]
+	if len(keys) > 0 && len(keys[0]) > 0 {
+		c.keys = keys[0]
 	}
 	return c
 }
 
 // Cookies manipulates http.Cookie easy, supports signed cookies.
 type Cookies struct {
-	req     *http.Request
-	w       http.ResponseWriter
-	keygrip *Keygrip
+	req  *http.Request
+	w    http.ResponseWriter
+	keys []string
 }
 
 // Get returns the cookie with the given name from the Cookie header in the request.
@@ -59,11 +89,11 @@ func (c *Cookies) Get(name string, signed ...bool) (value string, err error) {
 	}
 	value = cookie.Value
 	if len(signed) > 0 && signed[0] {
-		if c.keygrip == nil {
-			panic("required keygrip for signed cookies")
+		if c.keys == nil {
+			panic("required keys for signed cookies")
 		}
 		if sig, _ := c.req.Cookie(name + ".sig"); sig != nil && len(value) > 0 {
-			if c.keygrip.Verify(name+"="+value, sig.Value) {
+			if verify(c.keys, name+"="+value, sig.Value) {
 				return
 			}
 		}
@@ -98,63 +128,35 @@ func (c *Cookies) Set(name, val string, options ...*Options) *Cookies {
 	}
 	http.SetCookie(c.w, cookie)
 	if opts.Signed {
-		if c.keygrip == nil {
-			panic("required keygrip for signed cookie")
+		if c.keys == nil {
+			panic("required keys for signed cookie")
 		}
 		sig := *cookie
-		sig.Value = c.keygrip.Sign(sig.Name + "=" + sig.Value)
+		sig.Value = sign(c.keys[0], sig.Name+"="+sig.Value)
 		sig.Name = sig.Name + ".sig"
 		http.SetCookie(c.w, &sig)
 	}
 	return c
 }
 
-// Keygrip uses for signing and verifying data through a rotating credential system.
-type Keygrip struct {
-	mu   sync.Mutex // guarantee hash digest
-	hash []hash.Hash
+// keygrip uses for signing and verifying data through a rotating credential system.
+type keygrip struct {
+	keys []string
 }
 
-// NewKeygrip returns a Keygrip instance with optional keys.
-func NewKeygrip(keys []string) *Keygrip {
-	if len(keys) == 0 {
-		panic("required keys for Keygrip")
-	}
-
-	k := &Keygrip{
-		hash: make([]hash.Hash, 0, len(keys)),
-	}
-	for _, key := range keys {
-		k.hash = append(k.hash, hmac.New(sha1.New, []byte(key)))
-	}
-	return k
-}
-
-// Sign creates a summary with data and sha1 algorithm
-// compatibility for https://github.com/pillarjs/cookies
-func (k *Keygrip) Sign(data string) (sum string) {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	return base64.RawURLEncoding.EncodeToString(digest(k.hash[0], data))
+// sign creates a summary with data and sha1 algorithm
+func sign(key, data string) string {
+	return base64.RawURLEncoding.EncodeToString(hasher(key, data))
 }
 
 // Verify verify the data with the given hash summary
-func (k *Keygrip) Verify(data, sum string) bool {
-	k.mu.Lock()
-	defer k.mu.Unlock()
-	if current, err := base64.RawURLEncoding.DecodeString(sum); err == nil {
-		for _, h := range k.hash {
-			if subtle.ConstantTimeCompare(digest(h, data), current) == 1 {
+func verify(keys []string, data, checkSum string) bool {
+	if current, err := base64.RawURLEncoding.DecodeString(checkSum); err == nil {
+		for _, key := range keys {
+			if subtle.ConstantTimeCompare(hasher(key, data), current) == 1 {
 				return true
 			}
 		}
 	}
 	return false
-}
-
-func digest(h hash.Hash, data string) (buf []byte) {
-	h.Write([]byte(data))
-	buf = h.Sum(nil)
-	h.Reset()
-	return
 }

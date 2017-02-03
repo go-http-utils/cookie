@@ -8,7 +8,7 @@ import (
 
 func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		cookies := cookie.New(w, r, cookie.NewKeygrip([]string{"some key"}))
+		cookies := cookie.New(w, r, []string{"some key"})
 
 		cookies.Set("test", "some cookie", &cookie.Options{
 			Signed:   true,
