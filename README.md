@@ -15,7 +15,7 @@ Advanced cookie library for Go, support signed cookies.
 
 ## API
 
-### cookie.New(w http.ResponseWriter, r *http.Request[, keys []string])
+### cookie.New(w http.ResponseWriter, r *http.Request[, keys ...string])
 It returns a Cookies instance with optional keygrip for signed cookies.
 
 ### cookies.Set(name, val string[, opts *Options])
@@ -46,7 +46,7 @@ import (
 
 func main() {
 	http.HandleFunc("/", func(w http.ResponseWriter, r *http.Request) {
-		cookies := cookie.New(w, r, []string{"some key"})
+		cookies := cookie.New(w, r, "some key")
 
 		cookies.Set("test", "some cookie", &cookie.Options{
 			Signed:   true,

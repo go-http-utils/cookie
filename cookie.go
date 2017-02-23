@@ -57,14 +57,14 @@ func SetHash(fn func(key, data string) []byte) {
 	hasher = fn
 }
 
-// New returns a Cookies instance with optional keygrip for signed cookies.
-func New(w http.ResponseWriter, r *http.Request, keys ...[]string) (cookie *Cookies) {
+// New returns a Cookies instance with optional keys for signed cookies.
+func New(w http.ResponseWriter, r *http.Request, keys ...string) (cookie *Cookies) {
 	c := &Cookies{
 		req: r,
 		w:   w,
 	}
-	if len(keys) > 0 && len(keys[0]) > 0 {
-		c.keys = keys[0]
+	if len(keys) > 0 {
+		c.keys = keys
 	}
 	return c
 }
@@ -137,11 +137,6 @@ func (c *Cookies) Set(name, val string, options ...*Options) *Cookies {
 		http.SetCookie(c.w, &sig)
 	}
 	return c
-}
-
-// keygrip uses for signing and verifying data through a rotating credential system.
-type keygrip struct {
-	keys []string
 }
 
 // sign creates a summary with data and sha1 algorithm

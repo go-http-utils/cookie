@@ -48,10 +48,10 @@ func TestCookie(t *testing.T) {
 		cookievalue := "xxxxx"
 		recorder := httptest.NewRecorder()
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cookies := New(w, r, []string{})
+			cookies := New(w, r, []string{}...)
 			assert.Nil(cookies.keys)
 
-			cookies = New(w, r, keys)
+			cookies = New(w, r, keys...)
 			cookies.Set(cookiekey, cookievalue, &Options{
 				Signed:   true,
 				HTTPOnly: true,
@@ -85,7 +85,7 @@ func TestCookie(t *testing.T) {
 		cookievalue := "xxxxx"
 		recorder := httptest.NewRecorder()
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cookies := New(w, r, keys)
+			cookies := New(w, r, keys...)
 			cookies.Set(cookiekey, cookievalue, &Options{
 				Signed: false,
 			})
@@ -108,7 +108,7 @@ func TestCookie(t *testing.T) {
 		cookievalue := "xxxxx"
 		recorder := httptest.NewRecorder()
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cookies := New(w, r, keys)
+			cookies := New(w, r, keys...)
 			opts := &Options{
 				Signed: true,
 				MaxAge: -1,
@@ -132,7 +132,7 @@ func TestCookie(t *testing.T) {
 
 		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			t.Log(r.Cookies())
-			cookies := New(w, r, keys)
+			cookies := New(w, r, keys...)
 
 			val, err := cookies.Get(cookiekey + "cc")
 			assert.NotNil(err)
@@ -161,7 +161,7 @@ func TestCookie(t *testing.T) {
 
 		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			t.Log(r.Cookies())
-			cookies := New(w, r, keys)
+			cookies := New(w, r, keys...)
 			val, err := cookies.Get(cookiekey, true)
 			assert.Equal(err.Error(), "invalid signed cookie")
 			assert.NotEqual(val, cookievalue)
@@ -218,7 +218,7 @@ func TestCookie(t *testing.T) {
 		cookievalue := "xxxxx"
 		recorder := httptest.NewRecorder()
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cookies := New(w, r, keys)
+			cookies := New(w, r, keys...)
 			opts := &Options{
 				Signed: true,
 				MaxAge: -1,
@@ -243,7 +243,7 @@ func TestCookie(t *testing.T) {
 
 		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			t.Log(r.Cookies())
-			cookies := New(w, r, keys)
+			cookies := New(w, r, keys...)
 			val, err := cookies.Get(cookiekey, true)
 			assert.Nil(err)
 			assert.Equal(val, cookievalue)
@@ -270,7 +270,7 @@ func TestCookie(t *testing.T) {
 
 		handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			t.Log(r.Cookies())
-			cookies := New(w, r, keys)
+			cookies := New(w, r, keys...)
 			val, err := cookies.Get(cookiekey, true)
 			assert.Equal(err.Error(), "invalid signed cookie")
 			assert.NotEqual(val, cookievalue)
@@ -291,7 +291,7 @@ func TestPillarjsCookie(t *testing.T) {
 		req.Header.Set("Cookie", "cookieKey=cookie value; cookieKey.sig=JROAKAAIUzC3_akvMb7PKF4l5h4")
 		recorder := httptest.NewRecorder()
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cookies := New(w, r, keys)
+			cookies := New(w, r, keys...)
 			val, err := cookies.Get("cookieKey")
 			assert.Nil(err)
 			assert.Equal("cookie value", val)
@@ -311,7 +311,7 @@ func TestPillarjsCookie(t *testing.T) {
 		req.Header.Set("Cookie", "cookieKey=cookie value1; cookieKey.sig=JROAKAAIUzC3_akvMb7PKF4l5h4")
 		recorder := httptest.NewRecorder()
 		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			cookies := New(w, r, keys)
+			cookies := New(w, r, keys...)
 			val, err := cookies.Get("cookieKey")
 			assert.Nil(err)
 			assert.Equal("cookie value1", val)
