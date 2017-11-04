@@ -143,12 +143,12 @@ func (c *Cookies) Set(name, val string, options ...*Options) *Cookies {
 
 // Remove remove the given cookie
 func (c *Cookies) Remove(name string, options ...*Options) {
-	opts := defaultOptions
+	opts := *defaultOptions // should copy because we will change MaxAge
 	if len(options) > 0 {
-		opts = options[0]
+		opts = *options[0]
 	}
 	opts.MaxAge = -1
-	c.Set(name, "", opts)
+	c.Set(name, "", &opts)
 }
 
 // sign creates a summary with data and sha1 algorithm
