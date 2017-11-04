@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 )
@@ -100,7 +101,7 @@ func TestCookie(t *testing.T) {
 		assert.NotNil(err)
 	})
 
-	t.Run("Cookie with get that should be", func(t *testing.T) {
+	t.Run("Get and Set cookie that should be", func(t *testing.T) {
 		assert := assert.New(t)
 
 		req, _ := http.NewRequest("GET", "/health-check", nil)
@@ -168,6 +169,44 @@ func TestCookie(t *testing.T) {
 			assert.Equal("", val)
 		})
 		handler.ServeHTTP(recorder, req)
+	})
+
+	t.Run("Remove Cookie with sign key that should be", func(t *testing.T) {
+		assert := assert.New(t)
+
+		req, _ := http.NewRequest("GET", "/health-check", nil)
+		cookiekey := "test"
+		recorder := httptest.NewRecorder()
+		handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			cookies := New(w, r, []string{}...)
+			assert.Nil(cookies.keys)
+
+			cookies = New(w, r, keys...)
+			cookies.Remove(cookiekey, &Options{
+				Signed:   true,
+				HTTPOnly: true,
+				Secure:   true,
+				Domain:   "teambition.com",
+				MaxAge:   3600,
+				Path:     "/"})
+		})
+		handler.ServeHTTP(recorder, req)
+
+		c, err := getCookie(cookiekey, recorder)
+		assert.Nil(err)
+		assert.Equal("", c.Value)
+		assert.Equal(true, c.HttpOnly)
+		assert.Equal(true, c.Secure)
+		assert.Equal("teambition.com", c.Domain)
+		assert.Equal(-1, c.MaxAge)
+		assert.Equal("/", c.Path)
+		assert.Equal(c.Expires, time.Unix(1, 0).UTC())
+
+		c, err = getCookie(cookiekey+".sig", recorder)
+		assert.Nil(err)
+		assert.NotNil(c)
+		assert.Equal(c.Value, "")
+		assert.Equal(c.Expires, time.Unix(1, 0).UTC())
 	})
 
 	t.Run("Cookie with wrong Options that should be", func(t *testing.T) {

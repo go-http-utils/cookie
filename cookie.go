@@ -122,9 +122,9 @@ func (c *Cookies) Set(name, val string, options ...*Options) *Cookies {
 	}
 	if opts.MaxAge > 0 {
 		d := time.Duration(opts.MaxAge) * time.Second
-		cookie.Expires = time.Now().Add(d)
+		cookie.Expires = time.Now().Add(d).UTC()
 	} else if opts.MaxAge < 0 {
-		cookie.Expires = time.Unix(1, 0)
+		cookie.Expires = time.Unix(1, 0).UTC()
 	}
 	http.SetCookie(c.w, cookie)
 	if opts.Signed {
@@ -132,11 +132,23 @@ func (c *Cookies) Set(name, val string, options ...*Options) *Cookies {
 			panic("required keys for signed cookie")
 		}
 		sig := *cookie
-		sig.Value = sign(c.keys[0], sig.Name+"="+sig.Value)
+		if sig.Value != "" {
+			sig.Value = sign(c.keys[0], sig.Name+"="+sig.Value)
+		}
 		sig.Name = sig.Name + ".sig"
 		http.SetCookie(c.w, &sig)
 	}
 	return c
+}
+
+// Remove remove the given cookie
+func (c *Cookies) Remove(name string, options ...*Options) {
+	opts := defaultOptions
+	if len(options) > 0 {
+		opts = options[0]
+	}
+	opts.MaxAge = -1
+	c.Set(name, "", opts)
 }
 
 // sign creates a summary with data and sha1 algorithm
